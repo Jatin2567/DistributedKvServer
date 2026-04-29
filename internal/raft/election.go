@@ -13,11 +13,18 @@ func (r *RaftNode) electionLoop() {
 
 		select {
 		case <-time.After(timeout):
+			// No heartbeat received within timeout — start election
 			r.mu.Lock()
 			if r.state != Leader {
 				r.startElection()
 			}
 			r.mu.Unlock()
+
+		case <-r.resetElection:
+			// FIX: heartbeat received from valid leader — reset timer by
+			// looping again, which picks a fresh randomElectionTimeout()
+			continue
+
 		case <-r.stopCh:
 			return
 		}
@@ -145,6 +152,12 @@ func (r *RaftNode) HandleRequestVote(req types.RequestVoteRequest) types.Request
 	if (r.votedFor == "" || r.votedFor == req.CandidateID) && upToDate {
 		r.votedFor = req.CandidateID
 		resp.VoteGranted = true
+
+		// FIX: granting a vote also counts as activity — reset election timer
+		select {
+		case r.resetElection <- struct{}{}:
+		default:
+		}
 	}
 
 	resp.Term = r.currentTerm

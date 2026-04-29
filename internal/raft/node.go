@@ -2,6 +2,7 @@ package raft
 
 import (
 	"log"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -33,8 +34,9 @@ type RaftNode struct {
 	state State
 
 	// channels
-	applyCh chan types.LogEntry
-	stopCh  chan struct{}
+	applyCh        chan types.LogEntry
+	stopCh         chan struct{}
+	resetElection  chan struct{} // FIX: signals electionLoop to reset its timer
 
 	// timeouts
 	electionTimeout  time.Duration
@@ -61,8 +63,9 @@ func NewRaftNode(id string, peers []string) *RaftNode {
 
 		state: Follower,
 
-		applyCh: make(chan types.LogEntry, 100),
-		stopCh:  make(chan struct{}),
+		applyCh:       make(chan types.LogEntry, 100),
+		stopCh:        make(chan struct{}),
+		resetElection: make(chan struct{}, 1), // FIX: buffered so sender never blocks
 
 		electionTimeout:  randomElectionTimeout(),
 		heartbeatTimeout: 50 * time.Millisecond,
@@ -88,9 +91,12 @@ func (r *RaftNode) Get(key string) (string, bool) {
 }
 
 func randomElectionTimeout() time.Duration {
-	return time.Duration(150+randInt(150)) * time.Millisecond
+	// FIX: use math/rand instead of time.Now().UnixNano() % n
+	// which produced near-identical values across nodes started simultaneously
+	return time.Duration(150+rand.Intn(150)) * time.Millisecond
 }
 
-func randInt(n int) int {
-	return int(time.Now().UnixNano() % int64(n))
+func init() {
+	// FIX: seed the global rand source once at startup
+	rand.Seed(time.Now().UnixNano())
 }

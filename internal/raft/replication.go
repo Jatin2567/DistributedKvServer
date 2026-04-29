@@ -11,8 +11,8 @@ func (r *RaftNode) Propose(cmd types.Command) error {
 	}
 
 	entry := types.LogEntry{
-		Index: len(r.log),
-		Term:  r.currentTerm,
+		Index:   len(r.log),
+		Term:    r.currentTerm,
 		Command: cmd,
 	}
 
@@ -108,6 +108,14 @@ func (r *RaftNode) HandleAppendEntries(req types.AppendEntriesRequest) types.App
 
 	// reset role to follower on valid leader contact
 	r.state = Follower
+
+	// FIX: signal electionLoop to reset its timer — this is the core fix for
+	// bug #1. Without this, followers time out and start elections even while
+	// a healthy leader is sending heartbeats.
+	select {
+	case r.resetElection <- struct{}{}:
+	default:
+	}
 
 	// consistency check
 	if req.PrevLogIndex >= 0 {

@@ -2,6 +2,7 @@ package raft
 
 import (
 	"log"
+	"time"
 
 	"kvstore/pkg/types"
 )
@@ -24,11 +25,19 @@ func (r *RaftNode) updateCommitIndex() {
 }
 
 func (r *RaftNode) applyLoop() {
+	// FIX: replace the busy-spin `default:` branch with a ticker.
+	// The old code used `select { default: ... }` which meant the goroutine
+	// looped at full CPU speed (100% core usage), starving the election and
+	// heartbeat goroutines and causing spurious timeouts / leader flipping.
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-r.stopCh:
 			return
-		default:
+
+		case <-ticker.C:
 			r.mu.Lock()
 			entries := make([]types.LogEntry, 0, r.commitIndex-r.lastApplied)
 
