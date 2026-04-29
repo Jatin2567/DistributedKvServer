@@ -1,0 +1,6 @@
+node_id: "node1"
+http_addr: ":8081"
+rpc_addr: ":9001"
+peers:
+  - "localhost:9002"
+  - "localhost:9003"

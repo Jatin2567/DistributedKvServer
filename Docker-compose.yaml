@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  node1:
+    build: .
+    command: ["./kvstore", "configs/node1.json"]
+    ports:
+      - "8081:8081"
+      - "9001:9001"
+
+  node2:
+    build: .
+    command: ["./kvstore", "configs/node2.json"]
+    ports:
+      - "8082:8082"
+      - "9002:9002"
+
+  node3:
+    build: .
+    command: ["./kvstore", "configs/node3.json"]
+    ports:
+      - "8083:8083"
+      - "9003:9003"

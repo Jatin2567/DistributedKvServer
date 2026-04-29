@@ -1,32 +1,46 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"net/http"
-	"time"
-	"github.com/jatin2567/kvserver/internal/ApiHttpLayer"
+	"os"
+
+	"kvstore/internal/api"
+	"kvstore/internal/config"
+	"kvstore/internal/raft"
+	"kvstore/internal/transport"
 )
 
-func main(){
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("GET /", Handler.HandleGet)
-
-	mux.HandleFunc("PUT /", Handler.HandlePut)
-
-	mux.HandleFunc("DELETE /", Handler.HandleDelete)
-
-	server := &http.Server{
-		Addr: ":8080",
-		Handler: mux,
-		ReadTimeout: 5 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout: 150 * time.Second,
+func main() {
+	if len(os.Args) < 2 {
+		log.Fatal("usage: server <config-file>")
 	}
 
-	fmt.Println("Starting custom server on http://localhost:8080")
-	err := server.ListenAndServe()
-	if err != nil{
-		fmt.Printf("Server failed: %s\n", err)
+	configPath := os.Args[1]
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		log.Fatalf("failed to load config: %v", err)
+	}
+
+	// Initialize Raft node
+	raftNode := raft.NewRaftNode(cfg.NodeID, cfg.Peers)
+
+	// Start Raft processes
+	raftNode.Start()
+
+	// Initialize API handler
+	handler := api.NewHandler(raftNode)
+
+	// Register routes
+	mux := http.NewServeMux()
+	api.RegisterRoutes(mux, handler)
+	transport.NewServer(raftNode).RegisterHandlers(mux)
+
+	log.Printf("Node %s starting HTTP server on %s", cfg.NodeID, cfg.HTTPAddr)
+
+	// Start HTTP server
+	if err := http.ListenAndServe(cfg.HTTPAddr, mux); err != nil {
+		log.Fatalf("server failed: %v", err)
 	}
 }

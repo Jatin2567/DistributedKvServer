@@ -1,0 +1,9 @@
+{
+  "node_id": "node1",
+  "http_addr": ":8081",
+  "rpc_addr": ":8081",
+  "peers": [
+    "localhost:8082",
+    "localhost:8083"
+  ]
+}
