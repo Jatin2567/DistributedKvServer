@@ -1,6 +1,11 @@
 package raft
 
-import "kvstore/pkg/types"
+import (
+	"context"
+	"fmt"
+	"kvstore/pkg/types"
+	"time"
+)
 
 func (r *RaftNode) Propose(cmd types.Command) error {
 	r.mu.Lock()
@@ -17,6 +22,7 @@ func (r *RaftNode) Propose(cmd types.Command) error {
 	}
 
 	r.log = append(r.log, entry)
+	r.updateCommitIndex()
 
 	go r.broadcastAppendEntries()
 
@@ -41,6 +47,10 @@ func (r *RaftNode) broadcastAppendEntries() {
 
 func (r *RaftNode) sendAppendEntries(peer string) {
 	r.mu.Lock()
+	if r.state != Leader {
+		r.mu.Unlock()
+		return
+	}
 
 	nextIdx := r.nextIndex[peer]
 	prevIdx := nextIdx - 1
@@ -76,12 +86,18 @@ func (r *RaftNode) sendAppendEntries(peer string) {
 		r.becomeFollower(resp.Term)
 		return
 	}
+	if r.state != Leader || r.currentTerm != req.Term {
+		return
+	}
 
 	if resp.Success {
+		if prevIdx+len(entries) < r.matchIndex[peer] {
+			return
+		}
 		r.matchIndex[peer] = prevIdx + len(entries)
 		r.nextIndex[peer] = r.matchIndex[peer] + 1
 	} else {
-		if r.nextIndex[peer] > 0 {
+		if r.nextIndex[peer] == nextIdx && r.nextIndex[peer] > 0 {
 			r.nextIndex[peer]--
 		}
 	}
@@ -104,6 +120,10 @@ func (r *RaftNode) HandleAppendEntries(req types.AppendEntriesRequest) types.App
 
 	if req.Term > r.currentTerm {
 		r.becomeFollower(req.Term)
+	}
+	resp.Term = r.currentTerm
+	if req.PrevLogIndex < -1 {
+		return resp
 	}
 
 	// reset role to follower on valid leader contact
@@ -128,11 +148,23 @@ func (r *RaftNode) HandleAppendEntries(req types.AppendEntriesRequest) types.App
 	}
 
 	// append entries (overwrite conflicting entries)
-	r.log = append(r.log[:req.PrevLogIndex+1], req.Entries...)
+	for i, entry := range req.Entries {
+		index := req.PrevLogIndex + 1 + i
+		if index < len(r.log) && r.log[index].Term != entry.Term {
+			if index <= r.commitIndex {
+				return resp
+			}
+			r.log = r.log[:index]
+		}
+		if index >= len(r.log) {
+			r.log = append(r.log, req.Entries[i:]...)
+			break
+		}
+	}
 
 	// update commit index
 	if req.LeaderCommit > r.commitIndex {
-		lastIndex := len(r.log) - 1
+		lastIndex := req.PrevLogIndex + len(req.Entries)
 		if req.LeaderCommit < lastIndex {
 			r.commitIndex = req.LeaderCommit
 		} else {
@@ -143,4 +175,43 @@ func (r *RaftNode) HandleAppendEntries(req types.AppendEntriesRequest) types.App
 	resp.Success = true
 	resp.Term = r.currentTerm
 	return resp
+}
+
+// ProposeWait acknowledges only after this exact entry has been applied.
+func (r *RaftNode) ProposeWait(ctx context.Context, cmd types.Command) error {
+	r.mu.Lock()
+	if r.state != Leader {
+		r.mu.Unlock()
+		return ErrNotLeader
+	}
+	if len(r.log) >= 10000 {
+		r.mu.Unlock()
+		return fmt.Errorf("demo log full; restart to reset")
+	}
+	index, term := len(r.log), r.currentTerm
+	r.log = append(r.log, types.LogEntry{Index: index, Term: term, Command: cmd})
+	r.updateCommitIndex()
+	r.mu.Unlock()
+	go r.broadcastAppendEntries()
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-r.stopCh:
+			return fmt.Errorf("node stopped")
+		case <-ticker.C:
+			r.mu.Lock()
+			applied := r.lastApplied >= index && index < len(r.log) && r.log[index].Term == term
+			changed := r.currentTerm != term || r.state != Leader
+			r.mu.Unlock()
+			if applied {
+				return nil
+			}
+			if changed {
+				return ErrNotLeader
+			}
+		}
+	}
 }

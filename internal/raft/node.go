@@ -34,9 +34,9 @@ type RaftNode struct {
 	state State
 
 	// channels
-	applyCh        chan types.LogEntry
-	stopCh         chan struct{}
-	resetElection  chan struct{} // FIX: signals electionLoop to reset its timer
+	applyCh       chan types.LogEntry
+	stopCh        chan struct{}
+	resetElection chan struct{} // FIX: signals electionLoop to reset its timer
 
 	// timeouts
 	electionTimeout  time.Duration

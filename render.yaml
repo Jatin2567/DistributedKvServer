@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: distributed-kv-console
+    runtime: go
+    plan: free
+    buildCommand: go build -o app ./cmd/demo
+    startCommand: ./app
+    healthCheckPath: /healthz
+    envVars:
+      - key: GO_VERSION
+        value: 1.25.4

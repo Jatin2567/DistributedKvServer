@@ -38,6 +38,10 @@ func (r *RaftNode) startElection() {
 
 	termStarted := r.currentTerm
 	votes := 1
+	if len(r.peers) == 0 {
+		r.becomeLeader()
+		return
+	}
 
 	log.Printf("[Node %s] became Candidate for term %d", r.id, r.currentTerm)
 
@@ -75,7 +79,7 @@ func (r *RaftNode) startElection() {
 
 			if resp.VoteGranted {
 				votes++
-				if votes > len(r.peers)/2 {
+				if votes > (len(r.peers)+1)/2 {
 					r.becomeLeader()
 				}
 			}

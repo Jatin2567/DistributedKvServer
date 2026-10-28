@@ -17,7 +17,7 @@ func (r *RaftNode) updateCommitIndex() {
 			}
 		}
 
-		if count > len(r.peers)/2 && r.log[i].Term == r.currentTerm {
+		if count > (len(r.peers)+1)/2 && r.log[i].Term == r.currentTerm {
 			r.commitIndex = i
 			break
 		}
@@ -46,13 +46,12 @@ func (r *RaftNode) applyLoop() {
 				entries = append(entries, r.log[r.lastApplied])
 			}
 
-			r.mu.Unlock()
-
 			for _, entry := range entries {
 				if _, err := r.stateMachine.Apply(entry); err != nil {
 					log.Printf("[Node %s] apply error: %v", r.id, err)
 				}
 			}
+			r.mu.Unlock()
 		}
 	}
 }
